@@ -14,13 +14,13 @@ fn main() {
     let expression = "0   30   9,12,15     1,15       May-Aug  Mon,Wed,Fri  2018/2";
     let schedule = Schedule::from_str(expression).unwrap();
 
-    println!("{:?}", schedule.upcoming(Utc).take(2).collect::<Vec<_>>());
+    println!("{:?}", schedule.upcoming(Local).take(2).collect::<Vec<_>>());
 
     let duration = Duration::days(7);
-    let date_time = Utc::now();
-    let new_time = date_time + duration;
+    let now = Local::now();
+    let new_time = now + duration;
 
-    println!("{} + {} = {}", date_time, duration, new_time);
+    println!("{} + {} = {}", now, duration, new_time);
 
     println!(
         "{:?}",
@@ -42,4 +42,9 @@ fn main() {
     let mut together = a.iter().chain(b.iter()).collect::<Vec<_>>();
     together.sort();
     println!("{:?}", together);
+
+    let scheduled_time = together.iter().next().unwrap();
+    let duration_until = (**scheduled_time - now).to_std().unwrap();
+
+    println!("{:?}", duration_until);
 }
