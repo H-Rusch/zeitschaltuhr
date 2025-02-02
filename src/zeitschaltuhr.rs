@@ -1,4 +1,4 @@
-use crate::period::Period;
+use crate::period::{Period, RealTimeProvider};
 use chrono::{DateTime, Local};
 use cron::Schedule;
 
@@ -15,9 +15,7 @@ impl Abc for Scheduling {
     fn lel(&self) -> Box<dyn Iterator<Item = DateTime<Local>> + '_> {
         match &self {
             Scheduling::Fixed(schedule) => Box::new(schedule.upcoming(Local)),
-            Scheduling::Dynamic(period) => Box::new(period.upcoming()),
+            Scheduling::Dynamic(period) => Box::new(period.upcoming_fixed()),
         }
     }
 }
-
-

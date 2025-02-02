@@ -1,9 +1,13 @@
+use std::rc::Rc;
+
 use chrono::{DateTime, Duration, Local};
 use cron::Schedule;
+use mockall::automock;
 
 pub struct Period {
     start: DateTime<Local>,
     duration: Duration,
+    time_provider: Rc<dyn TimeProvider>,
 }
 
 #[derive(Debug)]
@@ -13,11 +17,18 @@ pub enum PeriodError {
 }
 
 impl Period {
-    pub fn starting_now(duration: Duration) -> Result<Self, PeriodError> {
-        Period::starting_at(Local::now(), duration)
+    pub fn starting_now(
+        duration: Duration,
+        time_provider: Rc<dyn TimeProvider>,
+    ) -> Result<Self, PeriodError> {
+        Period::starting_at(Local::now(), duration, time_provider)
     }
 
-    pub fn starting_at(start: DateTime<Local>, duration: Duration) -> Result<Self, PeriodError> {
+    pub fn starting_at(
+        start: DateTime<Local>,
+        duration: Duration,
+        time_provider: Rc<dyn TimeProvider>,
+    ) -> Result<Self, PeriodError> {
         return if duration.is_zero() {
             Err(PeriodError::ZeroDurationError)
         } else if duration.num_seconds().is_negative()
@@ -25,26 +36,51 @@ impl Period {
         {
             Err(PeriodError::NegativeDurationError)
         } else {
-            Ok(Period { start, duration })
+            Ok(Period {
+                start,
+                duration,
+                time_provider,
+            })
         };
     }
 
-    pub fn upcoming(&self) -> PeriodIterator {
-        PeriodIterator::new(self)
+    pub fn upcoming_relative(&self) -> PeriodIterator {
+        PeriodIterator::new_relative(self)
+    }
+
+    pub fn upcoming_fixed(&self) -> PeriodIterator {
+        PeriodIterator::new_fixed(self)
     }
 }
 
 pub struct PeriodIterator {
     duration: Duration,
     current: Option<DateTime<Local>>,
+    next_date_strategy: Box<dyn IntervalStrategy>,
 }
 
 impl PeriodIterator {
-    fn new(period: &Period) -> Self {
+    fn new(period: &Period, next_date_stategy: impl IntervalStrategy + 'static) -> Self {
+        let start = period.start;
+
         PeriodIterator {
             duration: period.duration,
-            current: Some(period.start),
+            current: Some(start),
+            next_date_strategy: Box::new(next_date_stategy),
         }
+    }
+
+    /// Create an iterator for the period, which can generate values in the past.
+    fn new_fixed(period: &Period) -> Self {
+        Self::new(period, FixedIntervalStrategy)
+    }
+
+    /// Create an iterator for the period, which will only generate values after the current timestamp.
+    fn new_relative(period: &Period) -> Self {
+        Self::new(
+            period,
+            NextAvailableIntervalStrategy::new(&period.time_provider),
+        )
     }
 }
 
@@ -52,12 +88,63 @@ impl Iterator for PeriodIterator {
     type Item = DateTime<Local>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(current) = self.current {
-            let next = current + self.duration;
-            self.current = Some(next);
+        match self.current {
+            Some(current) => {
+                let next = self
+                    .next_date_strategy
+                    .next_timestamp(current, &self.duration);
+                self.current = Some(next);
+                Some(current)
+            }
+            None => None,
         }
+    }
+}
 
-        self.current
+pub trait IntervalStrategy {
+    /// Determine the next timestamp for the interval based on the given duration.
+    fn next_timestamp(&self, current: DateTime<Local>, duration: &Duration) -> DateTime<Local>;
+}
+
+struct FixedIntervalStrategy;
+
+impl IntervalStrategy for FixedIntervalStrategy {
+    /// Determine the next timestamp for the interval. This can return values from the past.
+    fn next_timestamp(&self, timestamp: DateTime<Local>, duration: &Duration) -> DateTime<Local> {
+        timestamp + *duration
+    }
+}
+
+struct NextAvailableIntervalStrategy {
+    time_provider: Rc<dyn TimeProvider>,
+}
+
+impl NextAvailableIntervalStrategy {
+    fn new(provider: &Rc<dyn TimeProvider>) -> Self {
+        NextAvailableIntervalStrategy {
+            time_provider: Rc::clone(provider),
+        }
+    }
+}
+
+impl IntervalStrategy for NextAvailableIntervalStrategy {
+    /// Determine the next timestamp for the interval. The returned value is the next available value which in the future.
+    fn next_timestamp(&self, current: DateTime<Local>, duration: &Duration) -> DateTime<Local> {
+        self.time_provider.now();
+        todo!()
+    }
+}
+
+#[automock]
+pub trait TimeProvider {
+    fn now(&self) -> DateTime<Local>;
+}
+
+pub struct RealTimeProvider;
+
+impl TimeProvider for RealTimeProvider {
+    fn now(&self) -> DateTime<Local> {
+        Local::now()
     }
 }
 
@@ -67,7 +154,7 @@ pub trait UpcomingDates {
 
 impl UpcomingDates for Period {
     fn upcoming2(&self) -> Box<dyn Iterator<Item = DateTime<Local>> + '_> {
-        Box::new(self.upcoming())
+        Box::new(self.upcoming_relative())
     }
 }
 
@@ -80,6 +167,7 @@ impl UpcomingDates for Schedule {
 #[cfg(test)]
 mod tests {
     use chrono::TimeZone;
+    use core::time;
     use std::{iter, str::FromStr};
 
     use super::*;
@@ -88,8 +176,9 @@ mod tests {
     fn that_period_can_be_created() {
         let now = Local::now();
         let duration = Duration::hours(1);
+        let time_provider = MockTimeProvider::new();
 
-        let result = Period::starting_at(now, duration);
+        let result = Period::starting_at(now, duration, Rc::new(time_provider));
 
         assert!(result.is_ok());
         let period = result.unwrap();
@@ -101,8 +190,9 @@ mod tests {
     fn that_period_can_not_be_created_with_zero_duration() {
         let now = Local::now();
         let duration = Duration::seconds(0);
+        let time_provider = MockTimeProvider::new();
 
-        let result = Period::starting_at(now, duration);
+        let result = Period::starting_at(now, duration, Rc::new(time_provider));
 
         assert!(result.is_err());
     }
@@ -111,8 +201,9 @@ mod tests {
     fn that_period_can_not_be_created_with_negative_duration() {
         let now = Local::now();
         let duration = Duration::seconds(-1);
+        let time_provider = MockTimeProvider::new();
 
-        let result = Period::starting_at(now, duration);
+        let result = Period::starting_at(now, duration, Rc::new(time_provider));
 
         assert!(result.is_err());
     }
@@ -121,9 +212,10 @@ mod tests {
     fn that_upcoming_returns_iterator() {
         let start = Local::now();
         let duration = Duration::minutes(12);
-        let period = Period::starting_at(start, duration).unwrap();
+        let time_provider = MockTimeProvider::new();
+        let period = Period::starting_at(start, duration, Rc::new(time_provider)).unwrap();
 
-        let mut period_iterator = period.upcoming();
+        let mut period_iterator = period.upcoming_fixed();
 
         let next = period_iterator.next().unwrap();
         assert_eq!(next, start + duration);
@@ -133,8 +225,9 @@ mod tests {
     fn that_next_returns_increasing_timestamp() {
         let start = Local::now();
         let duration = Duration::minutes(12);
-        let period = Period::starting_at(start, duration).unwrap();
-        let mut period_iterator = PeriodIterator::new(&period);
+        let time_provider = MockTimeProvider::new();
+        let period = Period::starting_at(start, duration, Rc::new(time_provider)).unwrap();
+        let mut period_iterator = PeriodIterator::new_fixed(&period);
 
         let next = period_iterator.next().unwrap();
         assert_eq!(next, start + duration);
@@ -144,8 +237,37 @@ mod tests {
     }
 
     #[test]
-    fn that_next_returns_values_starting_from_current_timestamp() {
+    fn that_next_available_returns_values_starting_from_current_timestamp() {
         todo!()
+    }
+
+    #[test]
+    fn that_fixed_interval_returns_increasing_timestamp() {
+        let strategy = FixedIntervalStrategy;
+        let timestamp = Local::now();
+        let duration = Duration::minutes(12);
+
+        let result = strategy.next_timestamp(timestamp, &duration);
+
+        assert_eq!(result, timestamp + duration);
+    }
+
+    #[test]
+    fn that_fixed_interval_can_return_timestamps_in_the_past() {
+        let strategy = FixedIntervalStrategy;
+        let timestamp = Local
+            .with_ymd_and_hms(1990, 1, 1, 0, 0, 0)
+            .single()
+            .unwrap();
+        let duration = Duration::hours(1);
+        let expected_result = Local
+            .with_ymd_and_hms(1990, 1, 1, 1, 0, 0)
+            .single()
+            .unwrap();
+
+        let result = strategy.next_timestamp(timestamp, &duration);
+
+        assert_eq!(result, expected_result);
     }
 
     // TODO make immune to local time zone
@@ -160,8 +282,9 @@ mod tests {
             .earliest()
             .unwrap();
         let duration = Duration::hours(1);
-        let period = Period::starting_at(start, duration).unwrap();
-        let mut period_iterator = PeriodIterator::new(&period);
+        let time_provider = MockTimeProvider::new();
+        let period = Period::starting_at(start, duration, Rc::new(time_provider)).unwrap();
+        let mut period_iterator = PeriodIterator::new_fixed(&period);
 
         let next = period_iterator.next().unwrap();
 
@@ -179,8 +302,9 @@ mod tests {
             .earliest()
             .unwrap();
         let duration = Duration::hours(1);
-        let period = Period::starting_at(start, duration).unwrap();
-        let mut period_iterator = PeriodIterator::new(&period);
+        let time_provider = MockTimeProvider::new();
+        let period = Period::starting_at(start, duration, Rc::new(time_provider)).unwrap();
+        let mut period_iterator = PeriodIterator::new_fixed(&period);
 
         let next = period_iterator.next().unwrap();
         assert_eq!(next, expected_result);

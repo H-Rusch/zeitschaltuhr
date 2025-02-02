@@ -2,12 +2,14 @@
 mod period;
 mod zeitschaltuhr;
 
+use core::time;
+use std::rc::Rc;
 use std::str::FromStr;
 
 use chrono::{Duration, TimeZone};
 use chrono::{Local, Utc};
 use cron::Schedule;
-use period::Period;
+use period::{Period, RealTimeProvider};
 use zeitschaltuhr::{Abc, Scheduling};
 
 fn main() {
@@ -30,8 +32,7 @@ fn main() {
             .unwrap()
     );
 
-    let period = Period::starting_now(Duration::weeks(100)).unwrap();
-    println!("{:?}", period.upcoming().next());
+    let period = abcdef();
 
     let a_period = Scheduling::Dynamic(period);
     let a_schedule = Scheduling::Fixed(schedule);
@@ -47,4 +48,12 @@ fn main() {
     let duration_until = (**scheduled_time - now).to_std().unwrap();
 
     println!("{:?}", duration_until);
+}
+
+fn abcdef() -> Period {
+    let time_provider = RealTimeProvider;
+    let period = Period::starting_now(Duration::weeks(100), Rc::new(time_provider)).unwrap();
+    println!("{:?}", period.upcoming_fixed().next());
+
+    period
 }
