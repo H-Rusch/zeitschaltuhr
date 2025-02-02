@@ -51,8 +51,7 @@ fn main() {
 }
 
 fn abcdef() -> Period {
-    let time_provider = RealTimeProvider;
-    let period = Period::starting_now(Duration::weeks(100), Rc::new(time_provider)).unwrap();
+    let period = Period::starting_now(Duration::weeks(100)).unwrap();
     println!("{:?}", period.upcoming_fixed().next());
 
     period
