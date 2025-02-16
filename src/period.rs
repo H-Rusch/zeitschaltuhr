@@ -414,16 +414,13 @@ mod tests {
         assert_eq!(result, expected_result);
     }
 
-    // TODO make immune to local time zone
     #[test]
     fn that_duration_between_data_points_is_unaffected_by_start_of_daylight_savings() {
-        let start = Local
-            .with_ymd_and_hms(2025, 3, 30, 1, 0, 0)
-            .single()
-            .unwrap();
-        let expected_result = Local.with_ymd_and_hms(2025, 3, 30, 3, 0, 0).unwrap();
+        let timezone = Berlin;
+        let start = timezone.with_ymd_and_hms(2025, 3, 30, 1, 0, 0).unwrap();
+        let expected_result = timezone.with_ymd_and_hms(2025, 3, 30, 3, 0, 0).unwrap();
         let duration = Duration::hours(1);
-        let period = Period::starting_at(start, duration, Local).unwrap();
+        let period = Period::starting_at(start, duration, timezone).unwrap();
         let mut period_iterator = PeriodIterator::new_fixed(&period);
         period_iterator.next().unwrap(); // first value is same as start
 
@@ -434,22 +431,23 @@ mod tests {
 
     #[test]
     fn that_duration_between_data_points_is_unaffected_by_end_of_daylight_savings() {
-        let start = Local
-            .with_ymd_and_hms(2025, 10, 26, 3, 0, 0)
-            .latest()
-            .unwrap();
-        let expected_result = Local
-            .with_ymd_and_hms(2025, 10, 26, 3, 0, 0)
+        let timezone = Berlin;
+        let start = timezone
+            .with_ymd_and_hms(2025, 10, 26, 2, 0, 0)
             .earliest()
             .unwrap();
+        let expected_result = timezone
+            .with_ymd_and_hms(2025, 10, 26, 2, 0, 0)
+            .latest()
+            .unwrap();
         let duration = Duration::hours(1);
-        let period = Period::starting_at(start, duration, Local).unwrap();
+        let period = Period::starting_at(start, duration, timezone).unwrap();
         let mut period_iterator = PeriodIterator::new_fixed(&period);
-        period_iterator.next().unwrap();
+        period_iterator.next().unwrap(); // first value is same as start
 
-        let next = period_iterator.next().unwrap();
+        let result = period_iterator.next().unwrap();
 
-        assert_eq!(next, expected_result);
+        assert_eq!(result, expected_result);
     }
 
     #[test]
