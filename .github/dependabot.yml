@@ -1,0 +1,16 @@
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "H-Rusch"
+    labels:
+      - "dependencies"
+      - "automerge"
+    commit-message:
+      prefix: "Dependabot: "
+      include: "scope"
+    versioning-strategy: "auto"
