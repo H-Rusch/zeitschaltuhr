@@ -1,30 +1,6 @@
-use chrono::{DateTime, Duration, Local, TimeZone, Utc};
-use chrono_tz::Europe::Berlin;
+use chrono::{DateTime, Duration, TimeZone, Utc};
 use cron::Schedule;
 use mockall::automock;
-
-/*pub struct TimeZoneProvider<T>
-where
-    T: TimeZone,
-{
-    timezone: T,
-}
-
-impl<T> TimeProvider<T> for TimeZoneProvider<T>
-where
-    T: TimeZone,
-{
-    fn now(&self) -> DateTime<T> {
-        self.timezone.from_utc_datetime(&Utc::now().naive_utc())
-    }
-}*/
-
-fn now_as_timezone<T>(timezone: &T) -> DateTime<T>
-where
-    T: TimeZone,
-{
-    timezone.from_utc_datetime(&Utc::now().naive_utc())
-}
 
 pub struct Period<T>
 where
@@ -32,7 +8,6 @@ where
 {
     start: DateTime<T>,
     duration: Duration,
-    timezone: T,
     time_provider: Box<dyn TimeProvider<T>>,
 }
 
@@ -58,28 +33,13 @@ where
         Period::starting_at_with_time_provider(
             start,
             duration,
-            timezone.clone(),
             Box::new(RealTimeProvider { timezone }),
-        )
-    }
-
-    fn starting_now_with_time_provider(
-        duration: Duration,
-        timezone: T,
-        time_provider: Box<dyn TimeProvider<T>>,
-    ) -> Result<Self, PeriodError> {
-        Period::starting_at_with_time_provider(
-            now_as_timezone(&timezone),
-            duration,
-            timezone,
-            time_provider,
         )
     }
 
     fn starting_at_with_time_provider(
         start: DateTime<T>,
         duration: Duration,
-        timezone: T,
         time_provider: Box<dyn TimeProvider<T>>,
     ) -> Result<Self, PeriodError> {
         return if duration.is_zero() {
@@ -92,7 +52,6 @@ where
             Ok(Period {
                 start,
                 duration,
-                timezone,
                 time_provider,
             })
         };
@@ -243,6 +202,13 @@ where
     }
 }
 
+fn now_as_timezone<T>(timezone: &T) -> DateTime<T>
+where
+    T: TimeZone,
+{
+    timezone.from_utc_datetime(&Utc::now().naive_utc())
+}
+
 // TODO do something with this
 pub trait UpcomingDates<T>
 where
@@ -271,9 +237,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use chrono::TimeZone;
-    use core::time;
-    use std::{iter, str::FromStr};
+    use chrono::{Local, TimeZone};
+    use chrono_tz::Europe::Berlin;
+    use std::str::FromStr;
 
     use super::*;
 
@@ -296,8 +262,7 @@ mod tests {
         let duration = Duration::hours(1);
         let time_provider = MockTimeProvider::new();
 
-        let result =
-            Period::starting_at_with_time_provider(now, duration, Local, Box::new(time_provider));
+        let result = Period::starting_at_with_time_provider(now, duration, Box::new(time_provider));
 
         assert!(result.is_ok());
         let period = result.unwrap();
