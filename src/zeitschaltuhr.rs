@@ -2,7 +2,7 @@ use crate::period::Period;
 use chrono::{DateTime, Local};
 use cron::Schedule;
 
-pub enum Scheduling {
+/*pub enum Scheduling {
     Fixed(Schedule),
     Dynamic(Period),
 }
@@ -18,4 +18,4 @@ impl Abc for Scheduling {
             Scheduling::Dynamic(period) => Box::new(period.upcoming_fixed()),
         }
     }
-}
+}*/
