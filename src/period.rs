@@ -42,7 +42,7 @@ where
         duration: Duration,
         time_provider: Box<dyn TimeProvider<T>>,
     ) -> Result<Self, PeriodError> {
-        return if duration.is_zero() {
+        if duration.is_zero() {
             Err(PeriodError::ZeroDurationError)
         } else if duration.num_seconds().is_negative()
             || duration.num_nanoseconds().unwrap_or(0).is_negative()
@@ -54,7 +54,7 @@ where
                 duration,
                 time_provider,
             })
-        };
+        }
     }
 
     pub fn upcoming_relative(&self) -> PeriodIterator<NextAvailableIntervalStrategy<T>, T> {
@@ -116,7 +116,7 @@ where
     }
 }
 
-impl<'a, S, T> Iterator for PeriodIterator<'a, S, T>
+impl<S, T> Iterator for PeriodIterator<'_, S, T>
 where
     S: IntervalStrategy<T>,
     T: TimeZone,
@@ -164,7 +164,7 @@ where
     time_provider: &'a dyn TimeProvider<T>,
 }
 
-impl<'a, T> IntervalStrategy<T> for NextAvailableIntervalStrategy<'a, T>
+impl<T> IntervalStrategy<T> for NextAvailableIntervalStrategy<'_, T>
 where
     T: TimeZone,
 {
