@@ -124,13 +124,13 @@ where
     type Item = DateTime<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.current.clone() {
+        match &self.current {
             Some(current) => {
                 let next = self
                     .next_date_strategy
                     .next_timestamp(current.clone(), &self.period.duration);
                 self.current = Some(next);
-                Some(current)
+                self.current.clone()
             }
             None => None,
         }
