@@ -81,12 +81,12 @@ where
     S: IntervalStrategy<T>,
     T: TimeZone,
 {
-    fn new(period: &'a Period<T>, next_date_stategy: S) -> Self {
+    fn new(period: &'a Period<T>, next_date_strategy: S) -> Self {
         let start = period.start.clone();
         PeriodIterator {
             period,
             current: Some(start),
-            next_date_strategy: next_date_stategy,
+            next_date_strategy,
         }
     }
 }
@@ -151,7 +151,7 @@ impl<T> IntervalStrategy<T> for FixedIntervalStrategy
 where
     T: TimeZone,
 {
-    /// Determine the next timestamp for the interval. This can return values from the past.
+    /// Determine the next timestamp for the interval. This can return values which lie in the past.
     fn next_timestamp(&self, timestamp: DateTime<T>, duration: &Duration) -> DateTime<T> {
         timestamp + *duration
     }
@@ -168,9 +168,10 @@ impl<T> IntervalStrategy<T> for NextAvailableIntervalStrategy<'_, T>
 where
     T: TimeZone,
 {
-    /// Determine the next timestamp for the interval. The returned value is the next available value which in the future.
+    /// Determine the next timestamp for the interval. The returned value is the next available value which lies in the future.
     fn next_timestamp(&self, current: DateTime<T>, duration: &Duration) -> DateTime<T> {
         #[rustfmt::skip]
+        // how often does the duration fit into the time period between "now" and "current"?
         let full_durations_till_present = ((self.time_provider.now().timestamp() - current.timestamp()).max(0) as u32)
             .div_ceil(duration.num_seconds() as u32) as i64;
 
