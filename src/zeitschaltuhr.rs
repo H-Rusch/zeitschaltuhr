@@ -49,7 +49,8 @@ where
 
     async fn execute_scheduled_task(&self, mut scheduled_task: ScheduledTask<T>) {
         println!("execute_scheduled_task");
-        while let Some(time) = scheduled_task.iterator.next() {
+
+        for time in scheduled_task.iterator.by_ref() {
             println!();
             println!("{:?} next value of iterator ", time);
             println!("{:?} now", Local::now());

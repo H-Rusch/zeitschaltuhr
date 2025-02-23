@@ -100,9 +100,8 @@ where
     type Item = DateTime<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.current.take().map(|current| {
+        self.current.take().inspect(|current| {
             self.current = Some(current.clone() + self.period.duration);
-            current
         })
     }
 }
@@ -148,9 +147,8 @@ where
     type Item = DateTime<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.current.take().map(|current| {
+        self.current.take().inspect(|current| {
             self.current = Some(current.clone() + self.period.duration);
-            current
         })
     }
 }
