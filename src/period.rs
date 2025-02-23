@@ -1,14 +1,13 @@
-use chrono::{DateTime, Duration, TimeZone, Utc};
-use cron::Schedule;
-use mockall::automock;
+use chrono::{DateTime, Duration, Local, TimeZone, Utc};
 
+#[derive(Clone)]
 pub struct Period<T>
 where
     T: TimeZone,
 {
+    timezone: T,
     start: DateTime<T>,
     duration: Duration,
-    time_provider: Box<dyn TimeProvider<T>>,
 }
 
 #[derive(Debug)]
@@ -21,27 +20,12 @@ impl<T> Period<T>
 where
     T: TimeZone + 'static,
 {
-    pub fn starting_now(duration: Duration, timezone: T) -> Result<Self, PeriodError> {
-        Period::starting_at(now_as_timezone(&timezone), duration, timezone)
-    }
-
     pub fn starting_at(
         start: DateTime<T>,
         duration: Duration,
         timezone: T,
     ) -> Result<Self, PeriodError> {
-        Period::starting_at_with_time_provider(
-            start,
-            duration,
-            Box::new(RealTimeProvider { timezone }),
-        )
-    }
-
-    fn starting_at_with_time_provider(
-        start: DateTime<T>,
-        duration: Duration,
-        time_provider: Box<dyn TimeProvider<T>>,
-    ) -> Result<Self, PeriodError> {
+        // TODO dont support sub second accuracy
         if duration.is_zero() {
             Err(PeriodError::ZeroDurationError)
         } else if duration.num_seconds().is_negative()
@@ -50,157 +34,158 @@ where
             Err(PeriodError::NegativeDurationError)
         } else {
             Ok(Period {
+                timezone,
                 start,
                 duration,
-                time_provider,
             })
         }
     }
 
-    pub fn upcoming_relative(&self) -> PeriodIterator<NextAvailableIntervalStrategy<T>, T> {
+    pub fn upcoming_relative(&self) -> PeriodIterator<T> {
         PeriodIterator::new_relative(self)
     }
 
-    pub fn upcoming_fixed(&self) -> PeriodIterator<FixedIntervalStrategy, T> {
+    pub fn upcoming_fixed(&self) -> PeriodIterator<T> {
         PeriodIterator::new_fixed(self)
+    }
+
+    /// Return an iterator of DateTimes that takes ownership of the Period. That iterator will only generate values in the future.
+    pub fn upcoming_relative_owned(self) -> OwnedPeriodIterator<T> {
+        OwnedPeriodIterator::new_relative(self)
+    }
+
+    /// Return an iterator of DateTimes that takes ownership of the Period. The iterator can generate values in the past.
+    pub fn upcoming_fixed_owned(self) -> OwnedPeriodIterator<T> {
+        OwnedPeriodIterator::new_fixed(self)
     }
 }
 
-pub struct PeriodIterator<'a, S, T>
+pub struct PeriodIterator<'a, T>
 where
-    S: IntervalStrategy<T>,
     T: TimeZone,
 {
     period: &'a Period<T>,
     current: Option<DateTime<T>>,
-    next_date_strategy: S,
 }
 
-impl<'a, S, T> PeriodIterator<'a, S, T>
+impl<'a, T> PeriodIterator<'a, T>
 where
-    S: IntervalStrategy<T>,
     T: TimeZone,
 {
-    fn new(period: &'a Period<T>, next_date_strategy: S) -> Self {
-        let start = period.start.clone();
+    fn new(period: &'a Period<T>, start: DateTime<T>) -> Self {
         PeriodIterator {
             period,
             current: Some(start),
-            next_date_strategy,
         }
     }
-}
 
-impl<'a, T> PeriodIterator<'a, FixedIntervalStrategy, T>
-where
-    T: TimeZone,
-{
     /// Create an iterator for the period, which can generate values in the past.
     fn new_fixed(period: &'a Period<T>) -> Self {
-        Self::new(period, FixedIntervalStrategy)
+        Self::new(period, period.start.clone())
     }
-}
 
-impl<'a, T> PeriodIterator<'a, NextAvailableIntervalStrategy<'a, T>, T>
-where
-    T: TimeZone,
-{
     /// Create an iterator for the period, which will only generate values after the current timestamp.
     fn new_relative(period: &'a Period<T>) -> Self {
-        Self::new(
-            period,
-            NextAvailableIntervalStrategy {
-                time_provider: &*period.time_provider,
-            },
-        )
+        let start =
+            next_available_timestamp(period.start.clone(), &period.duration, &period.timezone)
+                .unwrap();
+        Self::new(period, start)
     }
 }
 
-impl<S, T> Iterator for PeriodIterator<'_, S, T>
+impl<T> Iterator for PeriodIterator<'_, T>
 where
-    S: IntervalStrategy<T>,
     T: TimeZone,
 {
     type Item = DateTime<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match &self.current {
-            Some(current) => {
-                let next = self
-                    .next_date_strategy
-                    .next_timestamp(current.clone(), &self.period.duration);
-                self.current = Some(next);
-                self.current.clone()
-            }
-            None => None,
+        self.current.take().map(|current| {
+            self.current = Some(current.clone() + self.period.duration);
+            current
+        })
+    }
+}
+
+pub struct OwnedPeriodIterator<T>
+where
+    T: TimeZone,
+{
+    period: Period<T>,
+    current: Option<DateTime<T>>,
+}
+
+impl<T> OwnedPeriodIterator<T>
+where
+    T: TimeZone,
+{
+    fn new(period: Period<T>, start: DateTime<T>) -> Self {
+        OwnedPeriodIterator {
+            period,
+            current: Some(start),
         }
     }
-}
 
-pub trait IntervalStrategy<T>
-where
-    T: TimeZone,
-{
-    /// Determine the next timestamp for the interval based on the given duration.
-    fn next_timestamp(&self, current: DateTime<T>, duration: &Duration) -> DateTime<T>;
-}
+    /// Create an iterator for the period, which can generate values in the past.
+    fn new_fixed(period: Period<T>) -> Self {
+        let start = period.start.clone();
+        Self::new(period, start)
+    }
 
-pub struct FixedIntervalStrategy;
-
-impl<T> IntervalStrategy<T> for FixedIntervalStrategy
-where
-    T: TimeZone,
-{
-    /// Determine the next timestamp for the interval. This can return values which lie in the past.
-    fn next_timestamp(&self, timestamp: DateTime<T>, duration: &Duration) -> DateTime<T> {
-        timestamp + *duration
+    /// Create an iterator for the period, which will only generate values after the current timestamp.
+    fn new_relative(period: Period<T>) -> Self {
+        let start =
+            next_available_timestamp(period.start.clone(), &period.duration, &period.timezone)
+                .unwrap();
+        Self::new(period, start)
     }
 }
 
-pub struct NextAvailableIntervalStrategy<'a, T>
+impl<T> Iterator for OwnedPeriodIterator<T>
 where
     T: TimeZone,
 {
-    time_provider: &'a dyn TimeProvider<T>,
-}
+    type Item = DateTime<T>;
 
-impl<T> IntervalStrategy<T> for NextAvailableIntervalStrategy<'_, T>
-where
-    T: TimeZone,
-{
-    /// Determine the next timestamp for the interval. The returned value is the next available value which lies in the future.
-    fn next_timestamp(&self, current: DateTime<T>, duration: &Duration) -> DateTime<T> {
-        #[rustfmt::skip]
-        // how often does the duration fit into the time period between "now" and "current"?
-        let full_durations_till_present = ((self.time_provider.now().timestamp() - current.timestamp()).max(0) as u32)
-            .div_ceil(duration.num_seconds() as u32) as i64;
-
-        current + Duration::seconds(full_durations_till_present * duration.num_seconds())
+    fn next(&mut self) -> Option<Self::Item> {
+        self.current.take().map(|current| {
+            self.current = Some(current.clone() + self.period.duration);
+            current
+        })
     }
 }
 
-#[automock]
-pub trait TimeProvider<T>
+fn next_available_timestamp<T>(
+    timestamp: DateTime<T>,
+    duration: &Duration,
+    timezone: &T,
+) -> Option<DateTime<T>>
 where
     T: TimeZone,
 {
-    fn now(&self) -> DateTime<T>;
-}
+    let now = now_as_timezone(timezone);
 
-pub struct RealTimeProvider<T>
-where
-    T: TimeZone,
-{
-    timezone: T,
-}
-
-impl<T> TimeProvider<T> for RealTimeProvider<T>
-where
-    T: TimeZone,
-{
-    fn now(&self) -> DateTime<T> {
-        now_as_timezone(&self.timezone)
+    println!("duration {:?}", duration);
+    println!("input  {:?}", timestamp.clone());
+    println!("now    {:?}", now.clone());
+    if now.timestamp() == timestamp.timestamp() {
+        return Some(timestamp.clone() + *duration);
     }
+
+    // calculate how often the duration fits in the time_difference between "now" and "current"
+    let time_difference = (now.timestamp() - timestamp.timestamp()).max(0) as u32;
+    let elapsed_duration_count = (time_difference).div_ceil(duration.num_seconds() as u32) as i64;
+
+    println!("{:?}", elapsed_duration_count);
+
+    // TODO remove clone
+    // TODO use Duration.mult
+    let result =
+        timestamp.clone() + Duration::seconds(elapsed_duration_count * duration.num_seconds());
+
+    println!("result {:?}", result.clone());
+
+    Some(result)
 }
 
 fn now_as_timezone<T>(timezone: &T) -> DateTime<T>
@@ -208,32 +193,6 @@ where
     T: TimeZone,
 {
     timezone.from_utc_datetime(&Utc::now().naive_utc())
-}
-
-// TODO do something with this
-pub trait UpcomingDates<T>
-where
-    T: TimeZone + 'static,
-{
-    fn upcoming2(&self, timezone: T) -> Box<dyn Iterator<Item = DateTime<T>> + '_>;
-}
-
-impl<T> UpcomingDates<T> for Period<T>
-where
-    T: TimeZone + 'static,
-{
-    fn upcoming2(&self, _: T) -> Box<dyn Iterator<Item = DateTime<T>> + '_> {
-        Box::new(self.upcoming_relative())
-    }
-}
-
-impl<T> UpcomingDates<T> for Schedule
-where
-    T: TimeZone + 'static,
-{
-    fn upcoming2(&self, timezone: T) -> Box<dyn Iterator<Item = DateTime<T>> + '_> {
-        Box::new(self.upcoming(timezone))
-    }
 }
 
 #[cfg(test)]
