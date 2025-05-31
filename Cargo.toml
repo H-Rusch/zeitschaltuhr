@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-chrono = "0.4.39"
-cron = "0.15.0"
-tokio = {version= "1.43.0", features=["rt", "time"]}
+chrono = "^0.4"
+cron = "^0.15"
+tokio = {version= "^1.43", features=["rt", "time"]}
 
 [dev-dependencies]
-chrono-tz = "0.10.1"
+chrono-tz = "^0.10"
