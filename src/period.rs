@@ -14,7 +14,11 @@ pub enum PeriodError {
 }
 
 impl Period {
-    pub fn starting_at(start: DateTime<Utc>, duration: Duration) -> Result<Self, PeriodError> {
+    pub fn starting_at<T: TimeZone>(
+        start: DateTime<T>,
+        duration: Duration,
+    ) -> Result<Self, PeriodError> {
+        let start = start.to_utc();
         // TODO dont support sub second accuracy
         if duration.is_zero() {
             Err(PeriodError::ZeroDurationError)

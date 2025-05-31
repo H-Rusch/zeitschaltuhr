@@ -4,6 +4,22 @@ use chrono_tz::Europe::Berlin;
 use crate::period::*;
 
 #[test]
+fn that_period_can_be_created_with_non_utc_timezone() {
+    let start = Berlin
+        .with_ymd_and_hms(2020, 4, 15, 2, 0, 0)
+        .single()
+        .unwrap();
+    let duration = Duration::seconds(15);
+    let expected_utc_start = Utc.with_ymd_and_hms(2020, 4, 15, 0, 0, 0).single().unwrap();
+
+    let period = Period::starting_at(start, duration);
+
+    assert!(period.is_ok());
+    assert_eq!(start, expected_utc_start);
+    assert_eq!(expected_utc_start, period.unwrap().start);
+}
+
+#[test]
 fn that_period_can_not_be_created_with_zero_duration() {
     let now = Utc::now();
     let duration = Duration::seconds(0);
