@@ -20,6 +20,17 @@ fn that_period_can_be_created_with_non_utc_timezone() {
 }
 
 #[test]
+fn that_periods_duration_is_adjusted() {
+    let start = Utc::now();
+    let duration = Duration::milliseconds(15_500);
+    let expected_duration = Duration::seconds(16);
+
+    let period = Period::starting_at(start, duration).unwrap();
+
+    assert_eq!(expected_duration, period.duration);
+}
+
+#[test]
 fn that_period_can_not_be_created_with_zero_duration() {
     let now = Utc::now();
     let duration = Duration::seconds(0);
@@ -218,6 +229,60 @@ fn that_duration_between_data_points_is_unaffected_by_end_of_daylight_savings() 
 
     let next = iterator.next().unwrap();
     assert_eq!(next, expected_result);
+}
+
+#[test]
+fn that_adjust_duration_does_no_adjustments() {
+    let duration = Duration::seconds(3);
+    let expected_result = Duration::seconds(3);
+
+    let result = adjust_duration(duration);
+
+    assert_eq!(expected_result, result);
+}
+
+#[test]
+fn that_adjust_duration_rounds_down_to_lower_second() {
+    // 1.2s -> 1s
+    let duration = Duration::microseconds(1_200_234);
+    let expected_result = Duration::seconds(1);
+
+    let result = adjust_duration(duration);
+
+    assert_eq!(expected_result, result);
+}
+
+#[test]
+fn that_adjust_duration_rounds_up_to_next_second() {
+    // 1.5s -> 2s 
+    let duration = Duration::milliseconds(1_500);
+    let expected_result = Duration::seconds(2);
+
+    let result = adjust_duration(duration);
+
+    assert_eq!(expected_result, result);
+}
+
+#[test]
+fn that_adjust_duration_rounds_to_higher_second_for_negative_duration() {
+    // -1.2s -> -1s
+    let duration = Duration::milliseconds(-1_200);
+    let expected_result = Duration::seconds(-1);
+
+    let result = adjust_duration(duration);
+
+    assert_eq!(expected_result, result);
+}
+
+#[test]
+fn that_adjust_duration_rounds_to_lower_second_for_negative_duration() {
+    // -1.5s -> -2s 
+    let duration = Duration::milliseconds(-1_500);
+    let expected_result = Duration::seconds(-2);
+
+    let result = adjust_duration(duration);
+
+    assert_eq!(expected_result, result);
 }
 
 #[test]

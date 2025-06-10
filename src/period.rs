@@ -14,11 +14,15 @@ pub enum PeriodError {
 }
 
 impl Period {
+    /// Create a Period where the starting timestamp and the duration are adjusted to the nearest second
+    /// Fails if the duration is zero or negative.
     pub fn starting_at<T: TimeZone>(
         start: DateTime<T>,
         duration: Duration,
     ) -> Result<Self, PeriodError> {
         let start = start.to_utc();
+        let duration = adjust_duration(duration);
+
         // TODO dont support sub second accuracy
         if duration.is_zero() {
             Err(PeriodError::ZeroDurationError)
@@ -119,6 +123,10 @@ impl Iterator for OwnedPeriodIterator {
             self.current = Some(*current + self.period.duration);
         })
     }
+}
+
+fn adjust_duration(duration: Duration) -> Duration {
+    Duration::seconds(duration.as_seconds_f64().round() as i64)
 }
 
 fn next_available_timestamp<T>(timestamp: DateTime<T>, duration: &Duration) -> Option<DateTime<T>>
