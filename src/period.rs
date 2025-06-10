@@ -1,4 +1,4 @@
-use chrono::{DateTime, Duration, TimeZone, Utc};
+use chrono::{DateTime, Duration, DurationRound, TimeZone, Utc};
 use std::cmp::Ordering;
 
 #[derive(Clone)]
@@ -20,10 +20,9 @@ impl Period {
         start: DateTime<T>,
         duration: Duration,
     ) -> Result<Self, PeriodError> {
-        let start = start.to_utc();
+        let start = adjust_timestamp(start.to_utc());
         let duration = adjust_duration(duration);
 
-        // TODO dont support sub second accuracy
         if duration.is_zero() {
             Err(PeriodError::ZeroDurationError)
         } else if duration.num_seconds().is_negative()
@@ -125,6 +124,12 @@ impl Iterator for OwnedPeriodIterator {
     }
 }
 
+// Adjust timestamp to closest full second
+fn adjust_timestamp(timestamp: DateTime<Utc>) -> DateTime<Utc> {
+    timestamp.duration_round(Duration::seconds(1)).unwrap()
+}
+
+/// Adjust duration to closest full second
 fn adjust_duration(duration: Duration) -> Duration {
     Duration::seconds(duration.as_seconds_f64().round() as i64)
 }
@@ -133,7 +138,7 @@ fn next_available_timestamp<T>(timestamp: DateTime<T>, duration: &Duration) -> O
 where
     T: TimeZone,
 {
-    let seconds_from_timestamp = Utc::now().timestamp() - timestamp.timestamp();
+    let seconds_from_timestamp = adjust_timestamp(Utc::now()).timestamp() - timestamp.timestamp();
 
     Some(match seconds_from_timestamp.cmp(&0) {
         Ordering::Less => timestamp.clone(),

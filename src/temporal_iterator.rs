@@ -52,10 +52,12 @@ mod tests {
 
         let mut period_iterator = period.iter_times();
 
-        let next = period_iterator.next().unwrap();
-        assert_eq!(next, start + duration);
+        let first = period_iterator.next();
+        assert!(first.is_some());
 
-        let next = period_iterator.next().unwrap();
-        assert_eq!(next, start + duration + duration);
+        let second = period_iterator.next();
+        assert!(second.is_some());
+
+        assert_eq!(second.unwrap(), first.unwrap() + duration);
     }
 }

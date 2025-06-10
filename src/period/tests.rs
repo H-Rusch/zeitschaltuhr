@@ -1,4 +1,4 @@
-use chrono::{Datelike, Days, Duration, TimeZone, Timelike, Utc};
+use chrono::{Datelike, Days, Duration, NaiveDate, TimeZone, Timelike, Utc};
 use chrono_tz::Europe::Berlin;
 
 use crate::period::*;
@@ -28,6 +28,21 @@ fn that_periods_duration_is_adjusted() {
     let period = Period::starting_at(start, duration).unwrap();
 
     assert_eq!(expected_duration, period.duration);
+}
+
+#[test]
+fn that_periods_start_timestamp_is_adjusted() {
+    let start = NaiveDate::from_ymd_opt(2020, 1, 1)
+        .unwrap()
+        .and_hms_milli_opt(0, 0, 0, 754)
+        .unwrap()
+        .and_utc();
+    let expected_start = Utc.with_ymd_and_hms(2020, 1, 1, 0, 0, 1).unwrap();
+    let duration = Duration::seconds(2);
+
+    let period = Period::starting_at(start, duration).unwrap();
+
+    assert_eq!(expected_start, period.start);
 }
 
 #[test]
@@ -122,14 +137,14 @@ fn that_relative_iterator_adjusts_initial_value_to_be_in_the_future_when_start_i
 
 #[test]
 fn that_relative_iterator_adjusts_initial_value_to_be_in_the_future_when_start_is_now() {
-    let now = Utc::now();
     let duration = Duration::days(1);
-    let period = Period::starting_at(now, duration).unwrap();
+    let period = Period::starting_at(Utc::now(), duration).unwrap();
+    let start = period.start.clone();
     let iterator = period.upcoming_relative_owned();
 
     let current = iterator.current.unwrap();
 
-    assert_eq!(now + duration, current);
+    assert_eq!(start + duration, current);
 }
 
 #[test]
@@ -137,11 +152,12 @@ fn that_relative_iterator_does_not_adjust_initial_value_when_start_is_in_the_fut
     let timestamp = Utc::now().checked_add_days(Days::new(10)).unwrap();
     let duration = Duration::days(1);
     let period = Period::starting_at(timestamp, duration).unwrap();
+    let start = period.start.clone();
     let iterator = period.upcoming_relative_owned();
 
     let current = iterator.current.unwrap();
 
-    assert_eq!(timestamp, current);
+    assert_eq!(start, current);
 }
 
 #[test]
@@ -232,6 +248,44 @@ fn that_duration_between_data_points_is_unaffected_by_end_of_daylight_savings() 
 }
 
 #[test]
+fn that_adjust_timestamp_does_not_adjust_timestamp() {
+    let timestamp = Utc.with_ymd_and_hms(2020, 1, 1, 0, 0, 0).unwrap();
+    let expected = timestamp.clone();
+
+    let result = adjust_timestamp(timestamp);
+
+    assert_eq!(expected, result);
+}
+
+#[test]
+fn that_adjust_timestamp_rounds_down_to_full_second() {
+    let timestamp = NaiveDate::from_ymd_opt(2020, 1, 1)
+        .unwrap()
+        .and_hms_milli_opt(0, 0, 0, 24)
+        .unwrap()
+        .and_utc();
+    let expected = Utc.with_ymd_and_hms(2020, 1, 1, 0, 0, 0).unwrap();
+
+    let result = adjust_timestamp(timestamp);
+
+    assert_eq!(expected, result);
+}
+
+#[test]
+fn that_adjust_timestamp_rounds_up_to_full_second() {
+    let timestamp = NaiveDate::from_ymd_opt(2020, 1, 1)
+        .unwrap()
+        .and_hms_milli_opt(0, 0, 0, 754)
+        .unwrap()
+        .and_utc();
+    let expected = Utc.with_ymd_and_hms(2020, 1, 1, 0, 0, 1).unwrap();
+
+    let result = adjust_timestamp(timestamp);
+
+    assert_eq!(expected, result);
+}
+
+#[test]
 fn that_adjust_duration_does_no_adjustments() {
     let duration = Duration::seconds(3);
     let expected_result = Duration::seconds(3);
@@ -254,7 +308,7 @@ fn that_adjust_duration_rounds_down_to_lower_second() {
 
 #[test]
 fn that_adjust_duration_rounds_up_to_next_second() {
-    // 1.5s -> 2s 
+    // 1.5s -> 2s
     let duration = Duration::milliseconds(1_500);
     let expected_result = Duration::seconds(2);
 
@@ -276,7 +330,7 @@ fn that_adjust_duration_rounds_to_higher_second_for_negative_duration() {
 
 #[test]
 fn that_adjust_duration_rounds_to_lower_second_for_negative_duration() {
-    // -1.5s -> -2s 
+    // -1.5s -> -2s
     let duration = Duration::milliseconds(-1_500);
     let expected_result = Duration::seconds(-2);
 
